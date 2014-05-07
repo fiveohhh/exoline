@@ -18,6 +18,7 @@ Command options:
                       that match the vendor/model in the given spec file
     -f                Used with the `--portal` flag to override the prompt when
                       updating multiple devices.
+    --no-diff         Do not show diff output on scripts.
 '''
 
 from __future__ import unicode_literals
@@ -46,8 +47,8 @@ class Plugin():
 
 # Device client model information
 device:
-    model: myModel
-    vendor: myVendor
+    model: "myModel"
+    vendor: "myVendor"
 
 # list of dataports that must exist
 dataports:
@@ -251,10 +252,10 @@ scripts:
             ciks = []
             
             
-            if args['--portal'] is not None:
+            if args['--portal'] == True:
                 # If user passed in the portal flag, but the spec doesn't have
                 # a vendor/model, exit
-                if (not 'device' in spec) or (not 'model' in spec['device']) (not 'vendor' in spec['device']):
+                if (not 'device' in spec) or (not 'model' in spec['device']) or (not 'vendor' in spec['device']):
                     print("""With --portal option, spec file requires a
                           device model and vendor field:
                           e.g.
@@ -269,27 +270,31 @@ scripts:
                     
                     # Get all clients in the portal
                     clients = rpc._listing_with_info(input_cik, ['client'])
-                    
                     # for each client
                     for k,v in clients.items()[0][1].items():
                         # Get meta field
-                        meta = json.loads(v['description']['meta'])
-                        
-                        # get device type (only vendor types have a model and vendor
-                        type = meta['device']['type']
-                        
-                        # if the device type is 'vendor'
-                        if type == 'vendor':
-                            # and it matches our vendor/model in the spec file
-                            if meta['device']['vendor'] == vendorName:
-                                if meta['device']['model'] == modelName:
-                                    # Append the cik to our list
-                                    ciks.append(v['key'])
+                        validJson = False
+                        meta = None
+                        try:
+                            meta = json.loads(v['description']['meta'])
+                            validJson = True
+                        except ValueError, e:
+                            # no json in this meat field
+                            validJson = False
+                        if validJson == True:
+                            # get device type (only vendor types have a model and vendor
+                            type = meta['device']['type']
+                            
+                            # if the device type is 'vendor'
+                            if type == 'vendor':
+                                # and it matches our vendor/model in the spec file
+                                if meta['device']['vendor'] == vendorName:
+                                    if meta['device']['model'] == modelName:
+                                        # Append the cik to our list
+                                        ciks.append(v['key'])
             else:
                 # only for single client
                 ciks.append(input_cik)
-            
-            
             
             # Make sure user knows they are about to update multiple devices
             # unless the `-f` flag is passed
@@ -447,7 +452,7 @@ scripts:
                                             if updatescripts:
                                                 print('Uploading script to {0}...'.format(alias))
                                                 rpc.upload_script([cik], res['file'], name=name, create=False, filterfn=template)
-                                            else:
+                                            elif not args['--no-diff']:
                                                 # show diff
                                                 import difflib
                                                 differ = difflib.Differ()
