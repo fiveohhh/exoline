@@ -256,13 +256,13 @@ scripts:
                 # If user passed in the portal flag, but the spec doesn't have
                 # a vendor/model, exit
                 if (not 'device' in spec) or (not 'model' in spec['device']) or (not 'vendor' in spec['device']):
-                    print("""With --portal option, spec file requires a
-                          device model and vendor field:
-                          e.g.
-                          device:
-                              model: modelName
-                              vendor: vendorName""")
-                    return None
+                    print("With --portal option, spec file requires a\r\n"
+                          "device model and vendor field:\r\n"
+                          "e.g.\r\n"
+                          "device:\r\n"
+                          "    model: modelName\r\n"
+                          "    vendor: vendorName\r\n")
+                    raise ExoException('--portal flag requires a device model/vendor in spec file')
                 else:
                     # get device vendor and model
                     modelName = spec['device']['model']
