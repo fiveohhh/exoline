@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Exosite RPC API Command Line Interface
    Provides command line access to the Remote Procedure Call API:
-   https://github.com/exosite/api/tree/master/rpc
+   https://github.com/exosite/docs/tree/master/rpc
 
 Usage:
   exo [--help] [options] <command> [<args> ...]
@@ -120,7 +120,8 @@ Command options:
     exo [options] record <cik> [<rid>] ((--value=<timestamp,value> ...) | -)
     exo [options] record <cik> [<rid>] --interval=<seconds> ((--value=<value> ...) | -)
 
-    - reads data from stdin.
+    - reads data from stdin. Data should be in CSV format (no headers) with rows
+      like this: <unix timestamp>,<value>
     --interval generates timestamps at a regular interval into the past.'''),
     ('create',
         '''Create a resource from a json description passed on stdin (with -),
@@ -139,7 +140,9 @@ Command options:
 Details:
     Pass - and a json description object on stdin, or leave it off to use defaults.
     Description is documented here:
-    http://developers.exosite.com/display/OP/Remote+Procedure+Call+API#RemoteProcedureCallAPI-create
+    https://github.com/exosite/docs/tree/master/rpc#create-client
+    https://github.com/exosite/docs/tree/master/rpc#create-dataport
+    https://github.com/exosite/docs/tree/master/rpc#create-datarule
 
     If - is not present, creates a resource with common defaults.'''),
     ('listing',
@@ -178,7 +181,7 @@ Command options:
         '''Update a resource from a json description passed on stdin.\n\nUsage:
     exo [options] update <cik> (<rid> - | -)
 
-    For details see https://github.com/exosite/api/tree/master/rpc#update'''),
+    For details see https://github.com/exosite/docs/tree/master/rpc#update'''),
     ('map',
         '''Add an alias to a resource.\n\nUsage:
     exo [options] map <cik> <rid> <alias>'''),
@@ -310,7 +313,7 @@ Command options:
 
      The clone and copy commands do similar things, but clone uses the RPC's
      create (clone) functionality, which is more full featured.
-     https://github.com/exosite/api/tree/master/rpc#create-clone
+     https://github.com/exosite/docs/tree/master/rpc#create-clone
 
      Use the clone command except if you need to copy a device to another portal.'''),
     #('tag', '''Add a tag to a resource\n\nUsage:
@@ -374,7 +377,7 @@ class ExolineOnepV1(onep.OnepV1):
 class ExoRPC():
     '''Wrapper for pyonep RPC API.
     Raises exceptions on error and provides some reasonable defaults.'''
-    regex_rid = re.compile("[0-9a-zA-Z]{40}")
+    regex_rid = re.compile("[0-9a-fA-F]{40}")
 
     class RPCException(Exception):
         pass
@@ -837,7 +840,7 @@ class ExoRPC():
         else:
             print(line)
 
-    def _print_node(self, rid, info, aliases, cli_args, spacer, islast, max_name):
+    def _print_node(self, rid, info, aliases, cli_args, spacer, islast, maxlen=None):
         typ = info['basic']['type']
         if typ == 'client':
             id = 'cik: ' + info['key']
@@ -879,7 +882,10 @@ class ExoRPC():
 
         has_alias = aliases is not None and len(aliases) > 0
         if has_alias:
-            add_opt(True, 'aliases', str(aliases))
+            if type(aliases) is list:
+                add_opt(True, 'aliases', json.dumps(aliases))
+            else:
+                add_opt(True, 'aliases', aliases)
         # show RID for clients with no alias, or if --verbose was passed
         ridopt = False
         if typ == 'client':
@@ -890,15 +896,26 @@ class ExoRPC():
         add_opt(ridopt, 'rid', rid)
         add_opt('--verbose', 'unit', units)
 
+
+        if maxlen == None:
+            maxlen = {}
+            maxlen['type'] = len(typ)
+            maxlen['name'] = len(name)
+            maxlen['format'] = 0 if 'format' not in info['description'] else len(info['description']['format'])
+
         if 'format' in info['description']:
-            desc = info['description']['format'] + ' ' + typ + ' ' + id
+            fmt = info['description']['format']
+            desc = fmt + ' ' * (maxlen['format'] + 1 - len(fmt))
+            desc += typ + ' ' * (maxlen['type'] + 1 - len(typ))
+            desc += id
         else:
-            desc = typ + ' ' + id
+            desc = typ + ' ' * (maxlen['type'] + 1 - len(typ))
+            desc += id
 
         self._print_tree_line('{0}{1}{2} {3} {4}'.format(
             spacer,
             name,
-            ' ' * (max_name - len(name)),
+            ' ' * (maxlen['name'] + 1 - len(name)),
             desc,
             '' if len(opt) == 0 else '({0})'.format(', '.join(
                 ['{0}: {1}'.format(k, v) for k, v in iteritems(opt)]))))
@@ -918,14 +935,13 @@ class ExoRPC():
             # info doesn't contain key
             info['key'] = cik
             aliases = info['aliases']
-            root_aliases = '(see parent)'
+            root_aliases = 'see parent'
             self._print_node(rid,
                              info,
                              root_aliases,
                              cli_args,
                              spacer,
-                             True,
-                             len(info['description']['name']))
+                             True)
             if max_level == 0:
                 return
             level += 1
@@ -941,9 +957,20 @@ class ExoRPC():
                 "  └─listing for {0} failed. info['basic']['status'] is \
 probably not valid.".format(cik))
         else:
-            # calculate the maximum length name of all children
-            lengths = [len(l[1]['description']['name']) for typ in types for l in iteritems(listing[typ])]
-            max_name = 0 if len(lengths) == 0 else max(lengths)
+            # calculate the maximum length of various things for all children,
+            # so we can make things line up in the output.
+            maxlen = {}
+            namelengths = [len(l[1]['description']['name']) for typ in types for l in iteritems(listing[typ])]
+            maxlen['name'] = 0 if len(namelengths) == 0 else max(namelengths)
+
+            typelengths = [len(l[1]['basic']['type']) for typ in types for l in iteritems(listing[typ])]
+            maxlen['type'] = 0 if len(typelengths) == 0 else max(typelengths)
+
+            formatlengths = [len(l[1]['description']['format'])
+                             for typ in types
+                             for l in iteritems(listing[typ])
+                             if 'format' in l[1]['description']]
+            maxlen['format'] = 0 if len(formatlengths) == 0 else max(formatlengths)
 
             # print everything
             for t_idx, t in enumerate(types):
@@ -962,11 +989,11 @@ probably not valid.".format(cik))
 
                     if t == 'client':
                         next_cik = info['key']
-                        self._print_node(rid, info, aliases, cli_args, own_spacer, islast, max_name)
+                        self._print_node(rid, info, aliases, cli_args, own_spacer, islast, maxlen)
                         if max_level == -1 or level < max_level:
                             self.tree(next_cik, info['aliases'], cli_args, child_spacer, level=level + 1, info_options=info_options)
                     else:
-                        self._print_node(rid, info, aliases, cli_args, own_spacer, islast, max_name)
+                        self._print_node(rid, info, aliases, cli_args, own_spacer, islast, maxlen)
 
     def drop_all_children(self, cik):
         isok, listing = self.exo.listing(
@@ -974,7 +1001,6 @@ probably not valid.".format(cik))
             types=['client', 'dataport', 'datarule', 'dispatch'],
             options={})
         self._raise_for_response(isok, listing)
-        pprint(listing)
         rids = itertools.chain(*[listing[t] for t in listing.keys()])
         self._exomult(cik, [['drop', rid] for rid in rids])
 
@@ -1373,7 +1399,7 @@ probably not valid.".format(cik))
 
 class ExoData():
     '''Implements the Data Interface API
-    https://github.com/exosite/api/tree/master/data'''
+    https://github.com/exosite/docs/tree/master/data'''
 
     def __init__(self, url='http://m2.exosite.com'):
         self.url = url
@@ -1417,7 +1443,7 @@ class ExoData():
 
 class ExoProvision():
     '''Implements the Provision API
-    https://github.com/exosite/api/tree/master/provision'''
+    https://github.com/exosite/docs/tree/master/provision'''
 
     def __init__(self, url='http://m2.exosite.com'):
         self.url = url

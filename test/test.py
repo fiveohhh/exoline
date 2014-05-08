@@ -18,6 +18,7 @@ import itertools
 import os
 
 import six
+import yaml
 from six import iteritems
 from dateutil import parser
 
@@ -1116,6 +1117,7 @@ Asked for desc: {0}\ngot desc: {1}'''.format(res.desc, res.info['description']))
         '''Spec command'''
         cik = self.client.cik()
         spec = 'files/spec.yaml'
+        spec_schema = 'files/spec_schema.yaml'
         r = rpc('spec', cik, spec)
         self.notok(r, 'no ids specified')
         r = rpc('spec', cik, spec, '--ids=1,2')
@@ -1126,13 +1128,23 @@ Asked for desc: {0}\ngot desc: {1}'''.format(res.desc, res.info['description']))
         self.ok(r, 'create dataports and scripts based on spec', match='')
 
         # test correct number of children of each type
+        r = rpc('drop', cik, '--all-children')
+        self.ok(r, 'drop children from client')
+        # just one id so numbers work out
+        r = rpc('spec', cik, spec, '--ids=1', '--create')
+        self.ok(r, 'create dataports and scripts based on spec')
+
         r = rpc('listing', cik, '--types=dataport,datarule')
         self.ok(r, 'get listing of client')
         listing = json.loads(r.stdout)
         dataports = listing['dataport']
         datarules = listing['datarule']
-        self.assertEqual(len(dataports), 5, 'created correct number of dataports')
-        self.assertEqual(len(datarules), 3, 'created correct number of datarules')
+
+        specobj = yaml.safe_load(open(spec))
+        spec_numdataports = len(specobj['dataports'])
+        self.assertEqual(len(dataports), spec_numdataports, 'created correct number of dataports')
+        spec_numscripts= len(specobj['scripts'])
+        self.assertEqual(len(datarules), spec_numscripts, 'created correct number of scripts')
 
         # test initial value
         r = rpc('read', cik, 'teststring_set1', '--format=raw')
@@ -1164,6 +1176,24 @@ Asked for desc: {0}\ngot desc: {1}'''.format(res.desc, res.info['description']))
         r = rpc('read', cik, 'testjson', '--format=raw')
         self.ok(r, 'read testjson initial value', match='{}')
 
+        # test json schema validation
+        r = rpc('drop', cik, '--all-children')
+        self.ok(r, 'drop children from test client')
+        r = rpc('create', cik, '--type=dataport', '--format=string', '--alias=testschema')
+        r = rpc('write', cik, 'testschema', "--value={\"foo\":\"bar\"}")
+        self.ok(r, 'write valid json')
+        r = rpc('read', cik, 'testschema')
+        self.l('stdout: ' + r.stdout)
+        r = rpc('spec', cik, spec_schema)
+        self.ok(r, 'jsonschema is valid', match='')
+
+        r = rpc('write', cik, 'testschema', "--value={\"bar\":1}")
+        self.ok(r, 'write invalid json')
+        r = rpc('read', cik, 'testschema')
+        self.l('stdout: ' + r.stdout)
+        r = rpc('spec', cik, spec_schema)
+        self.ok(r, 'jsonschema is not valid', search='is a required property')
+
         # TODO: test lua script templating
         # TODO: test that correct differences are reported. Change one thing
         # at a time, confirm report is correct, then confirm passing --create
@@ -1190,6 +1220,83 @@ Asked for desc: {0}\ngot desc: {1}'''.format(res.desc, res.info['description']))
 
         os.remove(example_spec)
 
+    def spec_multi_test(self):
+        '''
+            Tests the ability to update multiple device of the same clientmodel
+            under a single portal.  
+        '''
+        # Get example spec
+        r = rpc('spec', '--example')
+        example_spec = 'files/tmp_examplespec.yaml'
+        with open(example_spec, 'w') as f:
+            print(r.stdout)
+            if six.PY3:
+                out = r.stdout
+            else:
+                out = r.stdout.encode('utf8')
+            f.write(out)
+        
+        
+        cik = self.client.cik()
+        
+        # meta fields for test devices
+        metaMyModel = "{\"device\":{\"type\":\"vendor\",\"model\":\"myModel\",\"vendor\":\"myVendor\"}}"
+        metaNotMyModel = "{\"device\":{\"type\":\"vendor\",\"model\":\"NotMyModel\",\"vendor\":\"myVendor\"}}"
+
+        
+        # Create two devices of myModel type,
+        myDev1_r = Resource(
+            cik,
+            'client',
+            {"name": "myDev1",
+            "meta":metaMyModel})
+            
+        myDev2_r = Resource(
+            cik,
+            'client',
+            {"name": "myDev2",
+            "meta":metaMyModel})
+            
+        # Create one device of notMyModel type
+        notMyDev_r = Resource(
+            cik,
+            'client',
+            {"name": "notMyDev",
+            "meta":metaNotMyModel})
+        
+        # Create once device without a model type
+        genericDev_r = Resource(
+            cik,
+            'client',
+            {"name": "genericDev"})
+            
+
+        # Create devices
+        myDev1 = self._create(myDev1_r)
+        myDev2 = self._create(myDev2_r)
+        notMyDev = self._create(notMyDev_r)
+        genericDev = self._create(genericDev_r)
+        
+        # Attempt to apply spec to myModel types
+        r = rpc('spec', cik, example_spec, '--portal', '-f', '--create', '--update-scripts', '--ids=A,B')
+        self.ok(r, 'applying spec to portal')
+
+        # make sure that both myDevs now meet spec
+        r = rpc('spec', myDev1.cik(), example_spec, '--ids=A,B')
+        self.ok(r, "Device 1 didn't match spec", search='')
+        
+        r = rpc('spec', myDev2.cik(), example_spec, '--ids=A,B')
+        self.ok(r, "Device 2 didn't match spec", search='')
+        
+        # and that both the non-example or the one that didn't have 
+        # a type don't meet the spec.
+        r = rpc('spec', notMyDev.cik(), example_spec, '--ids=A,B')
+        self.ok(r, "Device didn't match spec", search='not found')
+
+        r = rpc('spec', genericDev.cik(), example_spec, '--ids=A,B')
+        self.ok(r, "Device didn't match spec", search='not found')
+        
+        
     def portals_cache_test(self):
         '''Portals clearcache command and option'''
         cik = self.client.cik()

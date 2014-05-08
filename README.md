@@ -1,7 +1,7 @@
 Exoline
 =======
 
-Exoline is command line tool for working with the Exosite [One Platform](http://exosite.com/products/onep).
+Exoline is a command line interface for the Exosite [One Platform](http://exosite.com/products/onep).
 
 Installation 
 ------------
@@ -46,7 +46,7 @@ Usage
 $ exo -h
 Exosite RPC API Command Line Interface
    Provides command line access to the Remote Procedure Call API:
-   https://github.com/exosite/api/tree/master/rpc
+   https://github.com/exosite/docs/tree/master/rpc
 
 Usage:
   exo [--help] [options] <command> [<args> ...]
@@ -508,6 +508,7 @@ For information about what features are in what Exoline versions look [here](HIS
 TODO
 ----
 
+- differentiate dataport and client shares in tree command (this is important now that I'm using non-deprecated form of listing command)
 - --name parameter to copy command so names don't conflict
 - add raw command, taking full RPC json from stdin
 - Make the info command take multiple rids (or stdin)
@@ -519,7 +520,7 @@ TODO
 - add the option of using requests to authenticate with https (see warning here: http://docs.python.org/2/library/httplib.html)
 - create executable and installer for a better Windows experience
 - support datasources with subscribe
-- differentiate dataport and client shares in tree command
 - resource ancestry lookup 
 - add a --monitor (or --follow) option to script command
-- add support for https://github.com/exosite/api/tree/master/rpc#authentication like this: $ exo info cik1,client_id=rid1
+- add support for https://github.com/exosite/docs/tree/master/rpc#authentication like this: $ exo info cik1,client_id=rid1
+- add --timeformat=excel option for Excel import. Instead of "2014-03-13 15:53:20-05:00,<value>" it would output "2014-03-13 15:53:20,-05:00,<value>"

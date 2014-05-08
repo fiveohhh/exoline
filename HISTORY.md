@@ -1,6 +1,25 @@
 History
 =======
 
+0.7.9 (2014-04-15)
+------------------
+
+- tweak to tree output formatting
+- better documentation for record - input
+- upgrade pyonep
+
+0.7.8 (2014-04-08)
+------------------
+
+- add support for JSON schema in spec command
+- remove extraneous output from drop --all-children
+
+0.7.7 (2014-04-02)
+------------------
+
+- update to latest pyonep
+- fix RID regular expression
+
 0.7.6 (2014-03-04)
 ------------------
 
